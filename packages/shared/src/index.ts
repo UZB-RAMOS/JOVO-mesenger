@@ -1,0 +1,98 @@
+import { z } from 'zod';
+
+export const usernameSchema = z
+  .string()
+  .trim()
+  .min(4, "Username kamida 4 ta belgidan iborat bo'lishi kerak")
+  .max(32)
+  .regex(/^[a-zA-Z][a-zA-Z0-9_]+$/, "Username harf bilan boshlanishi kerak");
+
+export const passwordSchema = z
+  .string()
+  .min(8, "Parol kamida 8 ta belgidan iborat bo'lishi kerak")
+  .max(128)
+  .regex(/[A-Za-z]/, "Parolda kamida bitta harf bo'lishi kerak")
+  .regex(/[0-9]/, "Parolda kamida bitta raqam bo'lishi kerak");
+
+export const registerSchema = z.object({
+  email: z.email().transform((value) => value.toLowerCase()),
+  username: usernameSchema.transform((value) => value.toLowerCase()),
+  displayName: z.string().trim().min(2).max(64),
+  password: passwordSchema,
+});
+
+export const verifySchema = z.object({
+  email: z.email().transform((value) => value.toLowerCase()),
+  code: z.string().regex(/^\d{6}$/),
+});
+
+export const loginSchema = z.object({
+  email: z.email().transform((value) => value.toLowerCase()),
+  password: z.string().min(1).max(128),
+});
+
+export const createDirectChatSchema = z.object({ userId: z.uuid() });
+
+export const messageContentSchema = z
+  .string()
+  .trim()
+  .min(1, "Xabar bo'sh bo'lishi mumkin emas")
+  .max(4096, "Xabar 4096 belgidan oshmasligi kerak");
+
+export const sendMessageSchema = z.object({
+  clientMessageId: z.uuid(),
+  content: messageContentSchema,
+  replyToId: z.uuid().optional(),
+});
+
+export const editMessageSchema = z.object({ content: messageContentSchema });
+
+export const messageReactionSchema = z.object({
+  emoji: z.string().trim().min(1, 'Reaksiya bo‘sh bo‘lishi mumkin emas').max(32),
+});
+
+export const markReadSchema = z.object({ messageId: z.uuid() });
+
+export type RegisterInput = z.infer<typeof registerSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+export type SendMessageInput = z.infer<typeof sendMessageSchema>;
+
+export type PublicUser = {
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string | null;
+  bio?: string | null;
+};
+
+export type MessageDto = {
+  id: string;
+  clientMessageId: string;
+  chatId: string;
+  senderId: string;
+  content: string;
+  createdAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  sender: PublicUser;
+  replyTo: {
+    id: string;
+    content: string;
+    sender: PublicUser;
+  } | null;
+  reactions: Array<{
+    emoji: string;
+    count: number;
+    userIds: string[];
+  }>;
+};
+
+export type ChatSummary = {
+  id: string;
+  title: string;
+  avatarUrl: string | null;
+  peer: PublicUser;
+  lastMessage: MessageDto | null;
+  unreadCount: number;
+  updatedAt: string;
+};

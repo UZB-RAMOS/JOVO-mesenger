@@ -1,0 +1,56 @@
+{
+  "name": "jovo-messenger",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.19.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web,worker -c magenta,cyan,yellow \"npm run dev --workspace @jovo/api\" \"npm run dev --workspace @jovo/web\" \"npm run dev --workspace @jovo/worker\"",
+    "dev:core": "concurrently -n api,web -c magenta,cyan \"npm run dev --workspace @jovo/api\" \"npm run dev --workspace @jovo/web\"",
+    "dev:bootstrap": "npm run db:deploy && npm run db:seed && npm run dev:core",
+    "dev:local": "pglite-server --db=.data/sfera-pg --max-connections=10 --run \"node scripts/dev-bootstrap.mjs\" --include-database-url",
+    "db:local": "pglite-server --db=.data/sfera-pg --max-connections=10",
+    "dev:api": "npm run dev --workspace @jovo/api",
+    "dev:web": "npm run dev --workspace @jovo/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "prisma db seed",
+    "db:reset": "prisma migrate reset",
+    "compose:up": "docker compose -f infra/docker-compose.yml up -d --build",
+    "compose:down": "docker compose -f infra/docker-compose.yml down"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@types/node": "^24.10.0",
+    "argon2": "^0.44.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "prettier": "^3.6.2",
+    "pg": "^8.16.3",
+    "prisma": "7.10.1",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.4"
+  },
+  "allowScripts": {
+    "argon2@0.44.0": true,
+    "prisma@7.10.1": true,
+    "@prisma/engines@7.10.1": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.27.7": true,
+    "msgpackr-extract@3.0.7": true
+  }
+}

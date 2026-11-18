@@ -1,0 +1,13 @@
+{
+  "name": "JOVO Messenger",
+  "short_name": "JOVO",
+  "description": "Mustaqil real-time messenjer",
+  "lang": "uz",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f5fb",
+  "theme_color": "#6057d9",
+  "icons": [
+    { "src": "/logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
