@@ -31,6 +31,30 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(128),
 });
 
+// Uzbekistan phone numbers: +998 followed by 9 digits (e.g. +998901234567).
+export const uzPhoneSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/[\s()-]/g, ''))
+  .refine((value) => /^\+998\d{9}$/.test(value), "Telefon raqami +998 bilan boshlanib, 9 ta raqamdan iborat bo'lishi kerak");
+
+export const phoneRegisterSchema = z.object({
+  phone: uzPhoneSchema,
+  username: usernameSchema.transform((value) => value.toLowerCase()),
+  displayName: z.string().trim().min(2).max(64),
+});
+
+export const phoneRequestSchema = z.object({ phone: uzPhoneSchema });
+
+export const phoneVerifySchema = z.object({
+  phone: uzPhoneSchema,
+  code: z.string().regex(/^\d{6}$/),
+});
+
+export type PhoneRegisterInput = z.infer<typeof phoneRegisterSchema>;
+export type PhoneRequestInput = z.infer<typeof phoneRequestSchema>;
+export type PhoneVerifyInput = z.infer<typeof phoneVerifySchema>;
+
 export const createDirectChatSchema = z.object({ userId: z.uuid() });
 
 export const messageContentSchema = z

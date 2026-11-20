@@ -12,6 +12,7 @@
     "dev:core": "concurrently -n api,web -c magenta,cyan \"npm run dev --workspace @jovo/api\" \"npm run dev --workspace @jovo/web\"",
     "dev:bootstrap": "npm run db:deploy && npm run db:seed && npm run dev:core",
     "dev:local": "pglite-server --db=.data/sfera-pg --max-connections=10 --run \"node scripts/dev-bootstrap.mjs\" --include-database-url",
+    "dev:local:run": "pglite-server --db=.data/sfera-pg --max-connections=10 --run \"node scripts/dev-run.mjs\" --include-database-url",
     "db:local": "pglite-server --db=.data/sfera-pg --max-connections=10",
     "dev:api": "npm run dev --workspace @jovo/api",
     "dev:web": "npm run dev --workspace @jovo/web",

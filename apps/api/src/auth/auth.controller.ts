@@ -38,6 +38,26 @@ export class AuthController {
     return { accessToken: result.accessToken, user: result.user };
   }
 
+  @Post('phone/register')
+  phoneRegister(@Body() body: unknown) {
+    return this.auth.phoneRegister(body);
+  }
+
+  @Post('phone/request-code')
+  phoneRequestCode(@Body() body: unknown) {
+    return this.auth.phoneRequestCode(body);
+  }
+
+  @Post('phone/verify')
+  async phoneVerify(@Body() body: unknown, @Req() request: Request, @Res({ passthrough: true }) response: Response) {
+    const result = await this.auth.phoneVerify(body, {
+      userAgent: request.headers['user-agent'],
+      ip: request.ip,
+    });
+    this.setRefreshCookie(response, result.refreshToken);
+    return { accessToken: result.accessToken, user: result.user };
+  }
+
   @Post('refresh')
   async refresh(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
     const result = await this.auth.refresh(request.cookies?.jovo_refresh);

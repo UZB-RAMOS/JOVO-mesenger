@@ -230,6 +230,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .primary-button:disabled { opacity: .65; cursor: wait; }
 .auth-switch { text-align: center; color: var(--muted); font-size: 13px; }
 .auth-switch button { border: 0; background: transparent; color: var(--accent); font-weight: 700; cursor: pointer; }
+.auth-method-tabs { display: flex; gap: 6px; padding: 5px; border-radius: 13px; background: var(--panel-soft); border: 1px solid var(--line); }
+.auth-method-tabs button { flex: 1; height: 38px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-weight: 700; font-size: 13px; cursor: pointer; transition: .18s; }
+.auth-method-tabs button.active { background: var(--panel); color: var(--accent); box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+.phone-prefix { display: inline-flex; align-items: center; gap: 5px; font-weight: 750; color: var(--text); padding-right: 11px; margin-right: 2px; border-right: 1px solid var(--line); white-space: nowrap; }
+.phone-icon-note { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); font-size: 12px; }
 
 /* Main app */
 .messenger-shell { display: grid; grid-template-columns: 84px 354px minmax(0, 1fr); height: 100dvh; background: var(--bg); }

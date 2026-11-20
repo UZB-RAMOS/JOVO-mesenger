@@ -12,14 +12,27 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { hash, verify } from 'argon2';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { loginSchema, registerSchema, verifySchema, type LoginInput, type RegisterInput } from '@jovo/shared';
+import {
+  loginSchema,
+  registerSchema,
+  verifySchema,
+  phoneRegisterSchema,
+  phoneRequestSchema,
+  phoneVerifySchema,
+  type LoginInput,
+  type RegisterInput,
+} from '@jovo/shared';
 import { PrismaService } from '../prisma.service';
+import { SmsService } from './sms.service';
+
+type SessionMeta = { userAgent: string | undefined; ip: string | undefined };
 
 @Injectable()
 export class AuthService {
   constructor(
     @Inject(PrismaService) private readonly prisma: PrismaService,
     @Inject(JwtService) private readonly jwt: JwtService,
+    @Inject(SmsService) private readonly sms: SmsService,
   ) {}
 
   private tokenHash(token: string) {
@@ -122,6 +135,143 @@ export class AuthService {
       }),
     ]);
     return { message: 'Hisob tasdiqlandi' };
+  }
+
+  private otpDevPayload(code: string, delivered: boolean) {
+    if (!delivered && process.env.NODE_ENV !== 'production' && process.env.DEV_SHOW_VERIFICATION_CODE === 'true') {
+      return { devVerificationCode: code };
+    }
+    return {};
+  }
+
+  private async assertNotRateLimited(identity: string) {
+    const recent = await this.prisma.verificationChallenge.count({
+      where: {
+        identity,
+        purpose: { in: ['REGISTER', 'LOGIN'] },
+        createdAt: { gt: new Date(Date.now() - 60 * 60 * 1000) },
+      },
+    });
+    if (recent >= 5) {
+      throw new HttpException('Juda ko‘p urinish. Bir soatdan keyin qayta urinib ko‘ring', HttpStatus.TOO_MANY_REQUESTS);
+    }
+  }
+
+  /** Phone registration — creates an account and sends a REGISTER OTP (passwordless). */
+  async phoneRegister(raw: unknown) {
+    const input = phoneRegisterSchema.parse(raw);
+    if (process.env.NODE_ENV === 'production' && !this.sms.enabled) {
+      throw new ServiceUnavailableException('Production SMS provider konfiguratsiya qilinmagan');
+    }
+    await this.assertNotRateLimited(input.phone);
+
+    const existing = await this.prisma.authIdentity.findUnique({
+      where: { type_value: { type: 'PHONE', value: input.phone } },
+      select: { userId: true, verifiedAt: true },
+    });
+    if (existing?.verifiedAt) throw new ConflictException('Bu raqam allaqachon ro‘yxatdan o‘tgan');
+
+    const usernameTaken = await this.prisma.user.findFirst({
+      where: { username: input.username, ...(existing ? { id: { not: existing.userId } } : {}) },
+      select: { id: true },
+    });
+    if (usernameTaken) throw new ConflictException('Username allaqachon band');
+
+    const code = randomInt(100000, 1000000).toString();
+    const codeHash = await hash(code);
+    const challengeData = {
+      identity: input.phone,
+      purpose: 'REGISTER' as const,
+      codeHash,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    };
+
+    if (existing) {
+      // Unverified account from a previous attempt — just resend a fresh code.
+      await this.prisma.verificationChallenge.create({ data: challengeData });
+    } else {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.user.create({
+          data: {
+            username: input.username,
+            profile: { create: { displayName: input.displayName } },
+            preferences: { create: {} },
+            privacy: { create: {} },
+            status: { create: {} },
+            identities: { create: { type: 'PHONE', value: input.phone } },
+          },
+        });
+        await tx.verificationChallenge.create({ data: challengeData });
+      });
+    }
+
+    const { delivered } = await this.sms.sendOtp(input.phone, code);
+    return { message: 'Tasdiqlash kodi yuborildi', ...this.otpDevPayload(code, delivered) };
+  }
+
+  /** Request a LOGIN OTP for an existing, verified phone number. */
+  async phoneRequestCode(raw: unknown) {
+    const input = phoneRequestSchema.parse(raw);
+    if (process.env.NODE_ENV === 'production' && !this.sms.enabled) {
+      throw new ServiceUnavailableException('Production SMS provider konfiguratsiya qilinmagan');
+    }
+    const identity = await this.prisma.authIdentity.findUnique({
+      where: { type_value: { type: 'PHONE', value: input.phone } },
+      select: { verifiedAt: true },
+    });
+    if (!identity?.verifiedAt) throw new NotFoundException('Bu raqam ro‘yxatdan o‘tmagan');
+    await this.assertNotRateLimited(input.phone);
+
+    const code = randomInt(100000, 1000000).toString();
+    const codeHash = await hash(code);
+    await this.prisma.verificationChallenge.create({
+      data: {
+        identity: input.phone,
+        purpose: 'LOGIN',
+        codeHash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+      },
+    });
+    const { delivered } = await this.sms.sendOtp(input.phone, code);
+    return { message: 'Tasdiqlash kodi yuborildi', ...this.otpDevPayload(code, delivered) };
+  }
+
+  /** Verify a phone OTP (register or login) and issue a session. */
+  async phoneVerify(raw: unknown, meta: SessionMeta) {
+    const input = phoneVerifySchema.parse(raw);
+    const challenge = await this.prisma.verificationChallenge.findFirst({
+      where: {
+        identity: input.phone,
+        purpose: { in: ['REGISTER', 'LOGIN'] },
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!challenge) throw new NotFoundException('Faol tasdiqlash kodi topilmadi');
+    if (challenge.attempts >= 5) throw new BadRequestException('Urinishlar soni tugadi');
+    if (!(await verify(challenge.codeHash, input.code))) {
+      await this.prisma.verificationChallenge.update({
+        where: { id: challenge.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new BadRequestException("Tasdiqlash kodi noto'g'ri");
+    }
+
+    const identity = await this.prisma.authIdentity.findUnique({
+      where: { type_value: { type: 'PHONE', value: input.phone } },
+      include: { user: { include: { profile: true } } },
+    });
+    if (!identity) throw new NotFoundException('Hisob topilmadi');
+
+    await this.prisma.$transaction([
+      this.prisma.verificationChallenge.update({ where: { id: challenge.id }, data: { consumedAt: new Date() } }),
+      ...(identity.verifiedAt
+        ? []
+        : [this.prisma.authIdentity.update({ where: { id: identity.id }, data: { verifiedAt: new Date() } })]),
+    ]);
+
+    return this.createSession(identity.user, meta);
   }
 
   async login(raw: LoginInput, meta: { userAgent: string | undefined; ip: string | undefined }) {

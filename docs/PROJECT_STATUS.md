@@ -2,6 +2,16 @@
 
 Yangilangan: 2026-11-18 (Asia/Tashkent)
 
+## Phase 2: +998 telefon OTP (2026-11-20)
+
+Parolsiz telefon + OTP autentifikatsiya qo'shildi (email/parol oqimi saqlangan holda):
+`uzPhoneSchema` (+998 va 9 raqam, shared'da test bilan), `SmsService` + **Eskiz.uz** adapteri
+(token yo'q bo'lsa dev-kod rejimi), yangi endpointlar `POST /api/auth/phone/{register,request-code,verify}`,
+va AuthPage'da Telefon/Email toggle + country-prefix (🇺🇿 +998) UI. Phone verify sessiya yaratib
+avtomatik login qiladi. Mavjud `VerificationChallenge` (identity-agnostik) ishlatildi — **migratsiya shart emas**.
+Brauzerda register → OTP (dev-kod) → auto-login E2E tasdiqlandi. Tekshiruv: typecheck, lint, 12 test, build — PASS.
+Real SMS uchun `.env`: `SMS_PROVIDER=eskiz`, `ESKIZ_EMAIL`, `ESKIZ_PASSWORD`.
+
 ## Rebrand: Sfera → JOVO (2026-11-18)
 
 Mahsulot **JOVO Messenger** nomiga to‘liq ko‘chirildi. O‘zgargan joylar: npm workspace scope `@sfera/*` → `@jovo/*` (relink qilindi), UI brend matnlari va tagline, yangi original JOVO logotipi (`apps/web/public/logo.svg` — kichik "j" belgisi), `index.html`/manifest/service worker, i18n (uz/ru/en), Docker Compose va volume nomlari, `.env`/`.env.example` DB/bucket identifikatorlari, seed demo hisoblari (`*@jovo.local` / `JOVO1234`, `@bob_jovo`), cookie nomi `jovo_refresh`, BullMQ queue `jovo-jobs`, localStorage kalitlari. Lokal PGlite ma'lumot katalogi `.data/sfera-pg` ataylab o‘zgartirilmadi (mavjud lokal bazani saqlab qolish uchun). Tekshiruv: typecheck, lint, 10 test, va to‘rtala workspace build — barchasi PASS.
