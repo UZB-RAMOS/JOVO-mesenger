@@ -38,6 +38,13 @@ enum MessageDeleteScope {
   FOR_EVERYONE
 }
 
+enum AttachmentKind {
+  IMAGE
+  VIDEO
+  AUDIO
+  FILE
+}
+
 model User {
   id             String                  @id @default(uuid()) @db.Uuid
   username       String                  @unique @db.VarChar(32)
@@ -63,6 +70,7 @@ model User {
   blockedBy      UserBlock[]             @relation("BlockTarget")
   sentDeliveries MessageDelivery[]       @relation("DeliveryRecipient")
   readReceipts   MessageReadReceipt[]
+  attachments    MessageAttachment[]
 }
 
 model UserProfile {
@@ -261,10 +269,30 @@ model Message {
   pins              MessagePin[]
   deliveries        MessageDelivery[]
   receipts          MessageReadReceipt[]
+  attachments       MessageAttachment[]
 
   @@unique([senderId, clientMessageId])
   @@index([chatId, createdAt, id])
   @@index([senderId, createdAt])
+}
+
+model MessageAttachment {
+  id         String         @id @default(uuid()) @db.Uuid
+  messageId  String?        @db.Uuid
+  uploaderId String         @db.Uuid
+  kind       AttachmentKind
+  storageKey String         @db.VarChar(512)
+  fileName   String         @db.VarChar(255)
+  mimeType   String         @db.VarChar(127)
+  size       Int
+  width      Int?
+  height     Int?
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+  message    Message?       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  uploader   User           @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([uploaderId, messageId])
 }
 
 model MessageReaction {

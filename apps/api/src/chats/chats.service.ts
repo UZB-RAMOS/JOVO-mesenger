@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 import {
   createDirectChatSchema,
@@ -6,21 +6,27 @@ import {
   markReadSchema,
   messageReactionSchema,
   sendMessageSchema,
+  type AttachmentDto,
   type MessageDto,
   type SendMessageInput,
 } from '@jovo/shared';
 import { PrismaService } from '../prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { canonicalDirectKey } from './chats.utils';
 
 const messageInclude = {
   sender: { include: { profile: true } },
   replyTo: { include: { sender: { include: { profile: true } } } },
   reactions: { select: { emoji: true, userId: true } },
+  attachments: true,
 } as const;
 
 @Injectable()
 export class ChatsService {
-  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(PrismaService) private readonly prisma: PrismaService,
+    @Inject(StorageService) private readonly storage: StorageService,
+  ) {}
 
   mapMessage(message: any): MessageDto {
     const reactionMap = new Map<string, string[]>();
@@ -57,6 +63,16 @@ export class ChatsService {
           }
         : null,
       reactions: [...reactionMap.entries()].map(([emoji, userIds]) => ({ emoji, count: userIds.length, userIds })),
+      attachments: message.deletedAt ? [] : (message.attachments ?? []).map((a: any): AttachmentDto => ({
+        id: a.id,
+        kind: a.kind,
+        fileName: a.fileName,
+        mimeType: a.mimeType,
+        size: a.size,
+        width: a.width ?? null,
+        height: a.height ?? null,
+        url: this.storage.signedUrl(a.id),
+      })),
     };
   }
 
@@ -257,10 +273,19 @@ export class ChatsService {
             content: input.content,
             replyToId: input.replyToId ?? null,
           },
-          include: messageInclude,
         });
+        if (input.attachmentIds?.length) {
+          const linked = await tx.messageAttachment.updateMany({
+            where: { id: { in: input.attachmentIds }, uploaderId: userId, messageId: null },
+            data: { messageId: created.id },
+          });
+          if (linked.count !== input.attachmentIds.length) {
+            throw new BadRequestException('Biriktirma yaroqsiz yoki allaqachon ishlatilgan');
+          }
+        }
         await tx.chat.update({ where: { id: chatId }, data: { updatedAt: new Date() } });
-        return created;
+        const full = await tx.message.findUnique({ where: { id: created.id }, include: messageInclude });
+        return full!;
       });
       return this.mapMessage(message);
     } catch (error) {

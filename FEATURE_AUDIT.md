@@ -87,15 +87,20 @@ talab qiladi.
 
 ## 3. Media va fayllar — spec §3, §6
 
+**Phase 3 (2026-11-20) bajarildi**: xavfsiz rasm + fayl biriktirish ishlaydi (disk saqlash + imzolangan URL). Browserda yuklash→yuborish→ko'rsatish E2E tasdiqlandi; backend curl testi (yuklash, serve, 403 soxta imzo, 400 magic-byte).
+
 | Funksiya | Holat | Izoh |
 |---|---|---|
-| Rasm/video/hujjat yuklash | 🔴 | MinIO container bor; **upload/download endpoint va UI yo'q** |
-| MessageAttachment modeli | 🔴 | Schemada yo'q |
-| Image viewer / gallery / zoom | 🔴 | Yo'q |
-| Video player / PiP | 🔴 | Yo'q |
-| Ovozli xabar (record/waveform) | 🔴 | Yo'q |
-| Doira video xabar | 🔴 | Yo'q |
-| Upload progress / cancel | 🔴 | Yo'q |
+| Rasm/fayl yuklash + yuborish | ✅ | `POST /api/uploads` (multipart), xabarga biriktirish, socket orqali yuborish |
+| MessageAttachment modeli + migratsiya | ✅ | `20261120160000_add_message_attachments` |
+| Xavfsizlik: hajm/MIME/magic-bytes | ✅ | 25 MB limit, allowlist, rasm magic-byte tekshiruvi (spoof → 400) |
+| Imzolangan, muddatli URL (serve) | ✅ | HMAC-signed, 1 soat; soxta imzo → 403 |
+| Image viewer (lightbox) + download | ✅ | To'liq ekran ko'rish + yuklab olish |
+| Upload progress | ✅ | XHR progress %; pending preview + bekor qilish |
+| Video/audio player (ichki) | 🟡 | Fayl sifatida yuklanadi/yuklab olinadi; ichki player/waveform yo'q |
+| Ovozli/doira video yozish | 🔴 | Keyingi bosqich (recorder) |
+| Image editor (crop/draw) | 🔴 | Keyingi bosqich |
+| S3/MinIO driver (ko'p instansiya) | 🟡 | Interfeys tayyor; disk driver default, S3 — hujjatlashtirilgan scale-out |
 
 ## 4. Guruhlar — spec §4
 

@@ -63,11 +63,34 @@ export const messageContentSchema = z
   .min(1, "Xabar bo'sh bo'lishi mumkin emas")
   .max(4096, "Xabar 4096 belgidan oshmasligi kerak");
 
-export const sendMessageSchema = z.object({
-  clientMessageId: z.uuid(),
-  content: messageContentSchema,
-  replyToId: z.uuid().optional(),
-});
+// Upload constraints (shared between client validation and server enforcement).
+export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024; // 25 MB
+export const ALLOWED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] as const;
+export const ALLOWED_FILE_MIME = [
+  'application/pdf',
+  'text/plain',
+  'application/zip',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/webm',
+  'video/mp4',
+  'video/webm',
+] as const;
+
+export const sendMessageSchema = z
+  .object({
+    clientMessageId: z.uuid(),
+    content: z.string().trim().max(4096).optional().default(''),
+    replyToId: z.uuid().optional(),
+    attachmentIds: z.array(z.uuid()).max(10).optional(),
+  })
+  .refine((value) => value.content.length > 0 || (value.attachmentIds?.length ?? 0) > 0, {
+    message: "Xabar matni yoki biriktirma bo'lishi kerak",
+  });
 
 export const editMessageSchema = z.object({ content: messageContentSchema });
 
@@ -87,6 +110,19 @@ export type PublicUser = {
   displayName: string;
   avatarUrl: string | null;
   bio?: string | null;
+};
+
+export type AttachmentKind = 'IMAGE' | 'VIDEO' | 'AUDIO' | 'FILE';
+
+export type AttachmentDto = {
+  id: string;
+  kind: AttachmentKind;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  url: string;
 };
 
 export type MessageDto = {
@@ -109,6 +145,7 @@ export type MessageDto = {
     count: number;
     userIds: string[];
   }>;
+  attachments: AttachmentDto[];
 };
 
 export type ChatSummary = {

@@ -28,7 +28,8 @@ function createService(senderId = 'alice-id') {
       findUnique: vi.fn().mockResolvedValue({ leftAt: null, chat: { deletedAt: null } }),
     },
   };
-  return { service: new ChatsService(prisma as never), prisma };
+  const storage = { signedUrl: vi.fn().mockReturnValue('https://signed.example/file') };
+  return { service: new ChatsService(prisma as never, storage as never), prisma };
 }
 
 describe('message mutations', () => {

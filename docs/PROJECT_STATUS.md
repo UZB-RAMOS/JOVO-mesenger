@@ -2,6 +2,18 @@
 
 Yangilangan: 2026-11-18 (Asia/Tashkent)
 
+## Phase 3: Media/fayl yuklash (2026-11-20)
+
+Xavfsiz rasm + fayl biriktirish qo'shildi. `MessageAttachment` modeli + migratsiya
+(`20261120160000_add_message_attachments`), `StorageService` (disk driver + HMAC-imzolangan,
+muddatli serve URL — presigned-URL modeli), `POST /api/uploads` (multipart) va `GET /api/uploads/file`.
+Validatsiya: 25 MB limit, MIME allowlist, rasm uchun magic-byte tekshiruvi. `ChatsService` xabarga
+biriktirmalarni bog'laydi va DTOʼda imzolangan URL qaytaradi (socket oqimi orqali). Web: composerʼda
+biriktirish tugmasi, XHR progress, pending preview, xabar pufagida rasm/fayl ko'rsatish va lightbox.
+Tekshiruv: typecheck, lint, 12 test, build — PASS. **Backend curl E2E**: yuklash→serve (200, bytes mos),
+soxta imzo→403, rasm spoof→400. **Browser E2E**: composerʼdan rasm yuklash→yuborish→pufakda ko'rinishi
+va lightbox tasdiqlandi. Disk saqlash `.data/uploads` (gitignored); S3/MinIO — hujjatlashtirilgan scale-out.
+
 ## Phase 2: +998 telefon OTP (2026-11-20)
 
 Parolsiz telefon + OTP autentifikatsiya qo'shildi (email/parol oqimi saqlangan holda):

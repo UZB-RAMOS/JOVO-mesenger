@@ -1,11 +1,11 @@
 import {
-  ArrowLeft, Bell, BellOff, Check, CheckCheck, ChevronDown, CircleCheck, Info,
-  LockKeyhole, LogOut, Mail, Menu, MessageCirclePlus, MoreVertical, Moon, Pencil,
+  ArrowLeft, Bell, BellOff, Check, CheckCheck, ChevronDown, CircleCheck, Download, FileText, Info,
+  LockKeyhole, LogOut, Mail, Menu, MessageCirclePlus, MoreVertical, Moon, Paperclip, Pencil,
   Mic, MicOff, Phone, PhoneOff, Reply, Search, Send, Settings, Smile, Sun, Trash2,
   UserPlus, UserRound, Video, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import type { ChatSummary, MessageDto, PublicUser } from '@jovo/shared';
+import { MAX_UPLOAD_BYTES, type AttachmentDto, type ChatSummary, type MessageDto, type PublicUser } from '@jovo/shared';
 import { io, type Socket } from 'socket.io-client';
 import { api, API_URL } from '../api';
 import { useT } from '../i18n';
@@ -29,6 +29,12 @@ const dayFormatter = new Intl.DateTimeFormat('uz-UZ', {
 
 function messageDay(value: string) { return dayFormatter.format(new Date(value)); }
 
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function Messenger() {
   const t = useT();
   const { accessToken, user, accounts, switchAccount, clearSession } = useAppStore();
@@ -38,6 +44,10 @@ export function Messenger() {
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [composer, setComposer] = useState('');
+  const [pendingAttachments, setPendingAttachments] = useState<AttachmentDto[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [lightbox, setLightbox] = useState<AttachmentDto | null>(null);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const [search, setSearch] = useState('');
   const [newChatOpen, setNewChatOpen] = useState(false);
@@ -70,6 +80,7 @@ export function Messenger() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const loadingOlderRef = useRef(false);
   const nearBottomRef = useRef(true);
@@ -365,10 +376,54 @@ export function Messenger() {
     typingTimer.current = setTimeout(() => socketRef.current?.emit('chat:typing', { chatId: activeId, active: false }), 1400);
   }
 
+  function uploadOne(file: File): Promise<AttachmentDto> {
+    return new Promise((resolve, reject) => {
+      const form = new FormData();
+      form.append('file', file);
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_URL}/api/uploads`);
+      const token = useAppStore.getState().accessToken;
+      if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.withCredentials = true;
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100)); };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try { resolve(JSON.parse(xhr.responseText) as AttachmentDto); } catch { reject(new Error('Javob xatosi')); }
+        } else {
+          let msg = 'Fayl yuklanmadi';
+          try { msg = (JSON.parse(xhr.responseText) as { message?: string }).message ?? msg; } catch { /* keep default */ }
+          reject(new Error(msg));
+        }
+      };
+      xhr.onerror = () => reject(new Error('Tarmoq xatosi'));
+      xhr.send(form);
+    });
+  }
+
+  async function uploadFiles(files: FileList | null) {
+    if (!files || !files.length) return;
+    setError('');
+    setUploading(true);
+    setUploadProgress(0);
+    try {
+      for (const file of Array.from(files)) {
+        if (file.size > MAX_UPLOAD_BYTES) { setError('Fayl hajmi 25 MB dan oshmasligi kerak'); continue; }
+        const attachment = await uploadOne(file);
+        setPendingAttachments((current) => [...current, attachment]);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Fayl yuklanmadi');
+    } finally {
+      setUploading(false);
+      setUploadProgress(0);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const content = composer.trim();
-    if (!content || !activeId || !activeChat || !socketRef.current) return;
+    if ((!content && pendingAttachments.length === 0) || !activeId || !activeChat || !socketRef.current) return;
     if (editingId) {
       if (savingEdit) return;
       setSavingEdit(true);
@@ -385,20 +440,23 @@ export function Messenger() {
       return;
     }
     const clientMessageId = crypto.randomUUID();
+    const attachments = pendingAttachments;
+    const attachmentIds = attachments.map((a) => a.id);
     const pending: LocalMessage = {
       id: `pending-${clientMessageId}`, clientMessageId, chatId: activeId, senderId: user!.id, content,
       createdAt: new Date().toISOString(), editedAt: null, deletedAt: null, sender: user!, pending: true,
       replyTo: replyingTo ? { id: replyingTo.id, content: replyingTo.content, sender: replyingTo.sender } : null,
-      reactions: [],
+      reactions: [], attachments,
     };
     setMessages((current) => [...current, pending]);
     setComposer('');
     setReplyingTo(null);
+    setPendingAttachments([]);
     localStorage.removeItem(`jovo-draft:${activeId}`);
     socketRef.current.emit('chat:typing', { chatId: activeId, active: false });
     socketRef.current.timeout(8000).emit(
       'message:send',
-      { chatId: activeId, clientMessageId, content, ...(replyingTo ? { replyToId: replyingTo.id } : {}) },
+      { chatId: activeId, clientMessageId, content, ...(replyingTo ? { replyToId: replyingTo.id } : {}), ...(attachmentIds.length ? { attachmentIds } : {}) },
       (timeoutError: Error | null, response: { ok?: boolean; message?: MessageDto; error?: string }) => {
         if (timeoutError || !response?.ok || !response.message) {
           setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId ? { ...item, pending: false, failed: true } : item));
@@ -566,10 +624,15 @@ export function Messenger() {
                 <div className={`message-row ${mine ? 'mine' : ''}`} data-message-id={message.id}>
                   {!mine && <Avatar name={message.sender.displayName} src={message.sender.avatarUrl} size="sm" />}
                   <div className="message-shell">
-                    <div className={`message-bubble ${message.failed ? 'failed' : ''} ${message.deletedAt ? 'deleted' : ''}`}>
+                    <div id={`message-${message.id}`} className={`message-bubble ${message.failed ? 'failed' : ''} ${message.deletedAt ? 'deleted' : ''}`}>
                       {!mine && <strong className="message-author">{message.sender.displayName}</strong>}
                       {message.replyTo && <button className="reply-preview" onClick={() => document.getElementById(`message-${message.replyTo!.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}><strong>{message.replyTo.sender.displayName}</strong><span>{message.replyTo.content}</span></button>}
-                      <p id={`message-${message.id}`}>{message.content}</p>
+                      {message.attachments.length > 0 && <div className="message-attachments">
+                        {message.attachments.map((a) => a.kind === 'IMAGE'
+                          ? <button type="button" key={a.id} className="attachment-image" onClick={() => setLightbox(a)}><img src={a.url} alt={a.fileName} loading="lazy" /></button>
+                          : <a key={a.id} className="attachment-file" href={a.url} target="_blank" rel="noreferrer"><span className="attachment-file-icon"><FileText size={20}/></span><span className="attachment-file-meta"><strong>{a.fileName}</strong><small>{formatBytes(a.size)}</small></span><Download size={18}/></a>)}
+                      </div>}
+                      {message.content && <p>{message.content}</p>}
                       <span className="message-meta">{message.editedAt && !message.deletedAt && <em>{t.edited}</em>}<time>{timeFormatter.format(new Date(message.createdAt))}</time>{mine && (message.pending ? <Check size={14}/> : <CheckCheck size={14}/>)}</span>
                       {message.reactions.length > 0 && <div className="message-reactions">{message.reactions.map((reaction) => <button key={reaction.emoji} className={reaction.userIds.includes(user!.id) ? 'active' : ''} onClick={() => void toggleReaction(message, reaction.emoji)}><span>{reaction.emoji}</span><b>{reaction.count}</b></button>)}</div>}
                     </div>
@@ -591,14 +654,29 @@ export function Messenger() {
           <form className="composer" onSubmit={(event) => void sendMessage(event)}>
             <div className="composer-column">
               {(replyingTo || editingId) && <div className="composer-context"><span>{editingId ? <Pencil size={17}/> : <Reply size={17}/>}</span><div><strong>{editingId ? t.editing : `${t.replyTo} ${replyingTo!.sender.displayName}`}</strong><small>{editingId ? composer : replyingTo!.content}</small></div><button type="button" onClick={cancelComposerAction} aria-label={t.cancel}><X size={18}/></button></div>}
+              {(pendingAttachments.length > 0 || uploading) && <div className="composer-attachments">
+                {pendingAttachments.map((a) => <div key={a.id} className="pending-attachment">
+                  {a.kind === 'IMAGE' ? <img src={a.url} alt={a.fileName} /> : <span className="pending-file"><FileText size={18}/></span>}
+                  <span className="pending-name">{a.fileName}</span>
+                  <button type="button" aria-label={t.cancel} onClick={() => setPendingAttachments((current) => current.filter((item) => item.id !== a.id))}><X size={14}/></button>
+                </div>)}
+                {uploading && <div className="pending-attachment uploading"><span>{uploadProgress}%</span></div>}
+              </div>}
               <div className="composer-box">
               <button type="button" className="composer-icon" onClick={() => setEmojiOpen((value) => !value)} aria-label={t.emoji}><Smile size={22}/></button>
+              <input ref={fileInputRef} type="file" hidden multiple onChange={(e) => void uploadFiles(e.target.files)} accept="image/*,application/pdf,text/plain,audio/*,video/mp4,video/webm,.doc,.docx,.xls,.xlsx,.zip" />
+              <button type="button" className="composer-icon" onClick={() => fileInputRef.current?.click()} disabled={uploading} aria-label="Fayl biriktirish"><Paperclip size={22}/></button>
               {emojiOpen && <div className="emoji-picker" role="dialog" aria-label={t.emoji}>{['😀','😂','😍','👍','❤️','🔥','👏','🎉','🤝','😎','🙏','✨'].map((emoji) => <button type="button" key={emoji} onClick={() => { updateComposer(`${composer}${emoji}`); setEmojiOpen(false); }}>{emoji}</button>)}</div>}
               <textarea ref={composerRef} rows={1} value={composer} onChange={(e) => updateComposer(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.form?.requestSubmit(); } }} placeholder={editingId ? t.editing : t.writeMessage} aria-label={t.writeMessage}/>
               </div>
             </div>
-            <button className="send-button" type="submit" disabled={!composer.trim() || !connected || savingEdit} aria-label={t.send}><Send size={20}/></button>
+            <button className="send-button" type="submit" disabled={(!composer.trim() && pendingAttachments.length === 0) || !connected || savingEdit || uploading} aria-label={t.send}><Send size={20}/></button>
           </form>
+          {lightbox && <div className="lightbox" role="dialog" aria-label={lightbox.fileName} onClick={() => setLightbox(null)}>
+            <button className="lightbox-close" aria-label={t.close} onClick={() => setLightbox(null)}><X size={24}/></button>
+            <img src={lightbox.url} alt={lightbox.fileName} onClick={(e) => e.stopPropagation()} />
+            <a className="lightbox-download" href={lightbox.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}><Download size={18}/>{lightbox.fileName}</a>
+          </div>}
         </>}
       </section>
 
